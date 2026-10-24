@@ -354,4 +354,6 @@ st.markdown("---")
 st.subheader("🩺 5. AI Clinical Action Plan & Export")
 rc1, rc2 = st.columns([2, 1])
 with rc1:
-    st.info(
+   st.info("AI Twin Prescription: Increasing daily steps and sleep duration significantly lowers 6-month cardiometabolic risk.")
+with rc2:
+    st.download_button("Download Forecast CSV", data=traj_df.to_csv(index=False).encode('utf-8'), file_name="twin_forecast.csv", mime="text/csv")

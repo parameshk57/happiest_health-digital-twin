@@ -1,6 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
-from models.twin_engine import DigitalTwinEngine
+from twin_engine import DigitalTwinEngine
 
 st.set_page_config(page_title="Happiest Health | Digital Twin PoC", layout="wide")
 

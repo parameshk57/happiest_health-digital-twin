@@ -3,12 +3,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-
-# Safe import that works whether twin_engine.py is in root or models/ folder
-try:
-    from twin_engine import DigitalTwinEngine
-except ImportError:
-    from models.twin_engine import DigitalTwinEngine
+from sklearn.ensemble import GradientBoostingRegressor
 
 st.set_page_config(
     page_title="ChronoTwin | 3D Human Digital Twin",
@@ -16,11 +11,136 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# ==========================================
+# SELF-CONTAINED DIGITAL TWIN ENGINE (10 FEATURES)
+# ==========================================
+class DigitalTwinEngine:
+    def __init__(self):
+        self.model = GradientBoostingRegressor(
+            n_estimators=180, learning_rate=0.05, max_depth=4, random_state=42
+        )
+        self.feature_names = [
+            'age', 'bmi', 'hba1c', 'sys_bp', 'ldl',
+            'resting_hr', 'hrv', 'daily_steps', 'sleep_hrs', 'spo2'
+        ]
+        self._train_baseline_model()
+
+    def _generate_synthetic_cohort(self, n=1500):
+        np.random.seed(42)
+        age = np.random.randint(22, 82, n)
+        bmi = np.random.normal(26.5, 4.5, n).clip(17.5, 45.0)
+        hba1c = np.random.normal(5.8, 1.1, n).clip(4.5, 11.5)
+        sys_bp = np.random.normal(126, 18, n).clip(90, 195)
+        ldl = np.random.normal(118, 32, n).clip(50, 230)
+
+        resting_hr = np.random.normal(72, 11, n).clip(45, 115)
+        hrv = np.random.normal(46, 16, n).clip(12, 105)
+        daily_steps = np.random.normal(6400, 3100, n).clip(800, 20000)
+        sleep_hrs = np.random.normal(6.8, 1.2, n).clip(3.5, 9.5)
+        spo2 = np.random.normal(97.2, 1.5, n).clip(88.0, 100.0)
+
+        risk = (
+            0.24 * (age - 25) +
+            0.85 * (bmi - 22) +
+            6.60 * (hba1c - 5.0) +
+            0.22 * (sys_bp - 110) +
+            0.08 * (ldl - 90) +
+            0.32 * (resting_hr - 60) -
+            0.26 * (hrv - 50) -
+            0.0018 * (daily_steps - 5000) -
+            1.85 * (sleep_hrs - 7.0) -
+            1.40 * (spo2 - 97.0) +
+            np.random.normal(0, 1.8, n)
+        )
+        risk_prob = (1 / (1 + np.exp(-0.08 * (risk - 18)))) * 100
+
+        return pd.DataFrame({
+            'age': age, 'bmi': bmi, 'hba1c': hba1c, 'sys_bp': sys_bp, 'ldl': ldl,
+            'resting_hr': resting_hr, 'hrv': hrv, 'daily_steps': daily_steps,
+            'sleep_hrs': sleep_hrs, 'spo2': spo2, 'risk_score': risk_prob.clip(1.0, 99.0)
+        })
+
+    def _train_baseline_model(self):
+        df = self._generate_synthetic_cohort(1500)
+        X = df[self.feature_names]
+        y = df['risk_score']
+        self.model.fit(X, y)
+
+    def predict_risk(self, patient_dict):
+        clean_dict = {k: float(patient_dict.get(k, 0.0)) for k in self.feature_names}
+        df_input = pd.DataFrame([clean_dict])[self.feature_names]
+        return float(np.clip(self.model.predict(df_input)[0], 1.0, 99.0))
+
+    def compute_organ_scores(self, p):
+        cardiac = np.clip(100 - (max(0, p['resting_hr'] - 60) * 1.4 + max(0, p['sys_bp'] - 115) * 0.8), 10, 99)
+        metabolic = np.clip(100 - (max(0, p['hba1c'] - 5.0) * 14.0 + max(0, p['bmi'] - 22.0) * 2.2), 10, 99)
+        autonomic = np.clip(35 + (p['hrv'] * 0.75) - max(0, 7.0 - p['sleep_hrs']) * 6.0, 10, 99)
+        vascular = np.clip(100 - (max(0, p['ldl'] - 85) * 0.45 + max(0, p['sys_bp'] - 115) * 0.6), 10, 99)
+        respiratory_sleep = np.clip((p['spo2'] - 85) * 5.5 + (p['sleep_hrs'] / 8.0) * 18.0, 10, 99)
+        return {
+            'Cardiac Efficiency': round(float(cardiac), 1),
+            'Glycemic & Metabolic': round(float(metabolic), 1),
+            'Autonomic (HRV) Tone': round(float(autonomic), 1),
+            'Vascular Health': round(float(vascular), 1),
+            'Sleep & Oxygenation': round(float(respiratory_sleep), 1)
+        }
+
+    def simulate_trajectory(self, baseline_patient, target_patient, months=6):
+        timeline = list(range(months + 1))
+        baseline_trend, intervention_trend, hr_trend, hba1c_trend = [], [], [], []
+
+        base_risk = self.predict_risk(baseline_patient)
+        for m in timeline:
+            baseline_trend.append(round(min(99.0, base_risk * (1 + 0.015 * m)), 2))
+
+            alpha = 1 - np.exp(-0.55 * m)
+            state = {
+                k: baseline_patient[k] + alpha * (target_patient[k] - baseline_patient[k])
+                for k in self.feature_names
+            }
+            step_delta = state['daily_steps'] - baseline_patient['daily_steps']
+            sleep_delta = state['sleep_hrs'] - baseline_patient['sleep_hrs']
+
+            state['resting_hr'] = np.clip(state['resting_hr'] - (step_delta / 1000.0) * 1.15 * alpha, 45, 115)
+            state['hrv'] = np.clip(state['hrv'] + (step_delta / 1000.0) * 1.6 * alpha + max(0, sleep_delta) * 2.2 * alpha, 12, 105)
+            state['hba1c'] = np.clip(state['hba1c'] - (step_delta / 2200.0) * 0.14 * alpha, 4.5, 11.5)
+
+            intervention_trend.append(round(self.predict_risk(state), 2))
+            hr_trend.append(round(float(state['resting_hr']), 1))
+            hba1c_trend.append(round(float(state['hba1c']), 2))
+
+        return pd.DataFrame({
+            'Month': timeline,
+            'Status Quo Trajectory': baseline_trend,
+            'Digital Twin Guided Care': intervention_trend,
+            'Predicted Resting HR (bpm)': hr_trend,
+            'Predicted HbA1c (%)': hba1c_trend
+        })
+
+    def generate_24h_watch_stream(self, resting_hr, hrv, steps, spo2):
+        np.random.seed(int(resting_hr + steps) % 1000)
+        hours = [f"{h:02d}:00" for h in range(24)]
+        circadian = np.array([
+            -8, -10, -11, -12, -11, -9, -2, 6, 14, 18, 12, 10,
+            15, 11, 9, 13, 22, 28, 16, 8, 3, -2, -5, -7
+        ])
+        activity_boost = (steps / 8000.0) * 8.0
+        hr_series = np.clip(resting_hr + circadian * (activity_boost / 8.0) + np.random.normal(0, 2.5, 24), 45, 165)
+        spo2_series = np.clip(spo2 + np.random.normal(0, 0.4, 24), 90.0, 100.0)
+        return pd.DataFrame({
+            'Hour': hours,
+            'Heart Rate (bpm)': np.round(hr_series, 1),
+            'SpO2 (%)': np.round(spo2_series, 1)
+        })
+
+
 @st.cache_resource
-def load_engine():
+def load_engine_v2():
     return DigitalTwinEngine()
 
-engine = load_engine()
+
+engine = load_engine_v2()
 
 
 def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
@@ -45,7 +165,7 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
     body_z.extend(1.68 + 0.14 * np.cos(v))
     add_cylinder(0, 0, 1.48, 1.55, 0.06, 0.06, 60)
 
-    # 2. Torso (Chest, Abdomen, Pelvis)
+    # 2. Torso
     add_cylinder(0, 0, 0.92, 1.48, 0.23, 0.14, 650)
 
     # 3. Left & Right Arms
@@ -58,7 +178,6 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
 
     fig = go.Figure()
 
-    # Holographic Human Body Point Cloud
     fig.add_trace(go.Scatter3d(
         x=body_x, y=body_y, z=body_z,
         mode='markers',
@@ -67,7 +186,6 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
         hoverinfo='skip'
     ))
 
-    # Helper to determine status color from 0-100 health score (100 = optimal)
     def score_to_color(score):
         if score >= 75:
             return '#00CC96', 'OPTIMAL'
@@ -75,7 +193,6 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
             return '#FFA15A', 'MODERATE STRAIN'
         return '#EF553B', 'HIGH RISK ALERT'
 
-    # Internal Organ Nodes inside the 3D Body
     organs_3d = [
         {
             'name': '🧠 Brain & Autonomic Core',
@@ -124,12 +241,7 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
             name=f"{org['name']} ({org['score']}/100)",
             text=[org['name'].split()[0]],
             textposition="top center",
-            marker=dict(
-                size=org['size'],
-                color=color,
-                opacity=0.95,
-                line=dict(color='white', width=2)
-            ),
+            marker=dict(size=org['size'], color=color, opacity=0.95, line=dict(color='white', width=2)),
             hovertemplate=(
                 f"<b>{org['name']}</b><br>"
                 f"Resilience Score: <b>{org['score']}/100 ({status})</b><br>"
@@ -152,7 +264,7 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
         )
     ))
 
-    # Neural / Vascular Spine Conduit Line connecting Brain -> Heart -> Metabolic Core
+    # Biometric Telemetry Conduit
     fig.add_trace(go.Scatter3d(
         x=[0.0, -0.05, 0.02, -0.07, -0.31],
         y=[0.0, 0.03, 0.0, 0.02, 0.04],
@@ -189,7 +301,6 @@ st.markdown(
     "**Happiest Health Digital Twin Challenge** | *Interactive 3D Anatomy + Smartwatch Telemetry + EHR Predictive Engine*"
 )
 
-# Initialize session state for Smartwatch Biometrics
 default_watch = {
     'resting_hr': 80,
     'hrv': 34,
@@ -341,7 +452,6 @@ trajectory_df = engine.simulate_trajectory(baseline_state, target_state, months=
 final_twin_risk = trajectory_df['Digital Twin Guided Care'].iloc[-1]
 risk_delta = final_twin_risk - base_risk
 
-# Predict 6-month physiological state
 final_state_approx = target_state.copy()
 final_state_approx['resting_hr'] = trajectory_df['Predicted Resting HR (bpm)'].iloc[-1]
 final_state_approx['hba1c'] = trajectory_df['Predicted HbA1c (%)'].iloc[-1]
@@ -355,84 +465,3 @@ with col_viz:
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Current Adverse Risk", f"{base_risk:.1f}%")
     k2.metric("6-Month Twin Risk", f"{final_twin_risk:.1f}%", f"{risk_delta:.1f}%", delta_color="inverse")
-    k3.metric("Predicted Resting HR", f"{trajectory_df['Predicted Resting HR (bpm)'].iloc[-1]} bpm",
-              f"{round(trajectory_df['Predicted Resting HR (bpm)'].iloc[-1] - resting_hr, 1)} bpm", delta_color="inverse")
-    k4.metric("Predicted HbA1c", f"{trajectory_df['Predicted HbA1c (%)'].iloc[-1]}%",
-              f"{round(trajectory_df['Predicted HbA1c (%)'].iloc[-1] - hba1c, 2)}%", delta_color="inverse")
-
-    tab_3d, tab1, tab2, tab3 = st.tabs([
-        "🧍 3D Human Body Analyzer",
-        "📈 6-Month Risk Trajectory",
-        "🫀 Multi-Organ Radar",
-        "⌚ 24h Smartwatch Stream"
-    ])
-
-    with tab_3d:
-        active_organs = base_organs if view_state_mode == "Current Baseline Patient" else target_organs
-        active_patient = baseline_state if view_state_mode == "Current Baseline Patient" else final_state_approx
-        fig_3d = build_3d_human_analyzer(active_organs, active_patient, st.session_state['watch_source'])
-        st.plotly_chart(fig_3d, use_container_width=True)
-
-    with tab1:
-        fig_traj = go.Figure()
-        fig_traj.add_trace(go.Scatter(
-            x=trajectory_df['Month'], y=trajectory_df['Status Quo Trajectory'],
-            mode='lines+markers', name='Status Quo (No Intervention)',
-            line=dict(color='#EF553B', width=3, dash='dash')
-        ))
-        fig_traj.add_trace(go.Scatter(
-            x=trajectory_df['Month'], y=trajectory_df['Digital Twin Guided Care'],
-            mode='lines+markers', name='Digital Twin Guided Care',
-            line=dict(color='#00CC96', width=4)
-        ))
-        fig_traj.update_layout(
-            title="Longitudinal Cardiometabolic Risk Projection (6 Months)",
-            xaxis_title="Months from Baseline",
-            yaxis_title="Adverse Event Risk Score (%)",
-            yaxis=dict(range=[0, 100]),
-            height=420
-        )
-        st.plotly_chart(fig_traj, use_container_width=True)
-
-    with tab2:
-        categories = list(base_organs.keys())
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(
-            r=list(base_organs.values()) + [list(base_organs.values())[0]],
-            theta=categories + [categories[0]],
-            fill='toself', name='Current Baseline State', line_color='#EF553B'
-        ))
-        fig_radar.add_trace(go.Scatterpolar(
-            r=list(target_organs.values()) + [list(target_organs.values())[0]],
-            theta=categories + [categories[0]],
-            fill='toself', name='6-Month Digital Twin Target', line_color='#00CC96'
-        ))
-        fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            title="Organ System Resilience Index (0 = Critical, 100 = Optimal)",
-            height=420
-        )
-        st.plotly_chart(fig_radar, use_container_width=True)
-
-    with tab3:
-        stream_df = engine.generate_24h_watch_stream(resting_hr, hrv, daily_steps, spo2)
-        fig_watch = go.Figure()
-        fig_watch.add_trace(go.Scatter(
-            x=stream_df['Hour'], y=stream_df['Heart Rate (bpm)'],
-            mode='lines+markers', name='Continuous PPG Heart Rate (bpm)',
-            line=dict(color='#636EFA', width=3)
-        ))
-        fig_watch.add_trace(go.Scatter(
-            x=stream_df['Hour'], y=stream_df['SpO2 (%)'],
-            mode='lines', name='Peripheral SpO2 (%)',
-            line=dict(color='#00CC96', width=2, dash='dot'),
-            yaxis='y2'
-        ))
-        fig_watch.update_layout(
-            title=f"24-Hour Circadian Biometric Stream ({st.session_state['watch_source']})",
-            xaxis_title="Time of Day (24h)",
-            yaxis=dict(title="Heart Rate (bpm)"),
-            yaxis2=dict(title="SpO2 (%)", overlaying='y', side='right', range=[88, 100]),
-            height=420
-        )
-        st.plotly_chart(fig_watch, use_container_width=True)

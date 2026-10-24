@@ -6,14 +6,14 @@ import streamlit as st
 from sklearn.ensemble import GradientBoostingRegressor
 
 st.set_page_config(
-    page_title="ChronoTwin | 3D Human Digital Twin",
+    page_title="ChronoTwin | 3D Plexus Human Digital Twin",
     page_icon="🧬",
     layout="wide"
 )
 
 
 # ==========================================
-# SELF-CONTAINED DIGITAL TWIN ENGINE (10 FEATURES)
+# BUILT-IN DIGITAL TWIN ENGINE (ERROR-PROOF)
 # ==========================================
 class DigitalTwinEngine:
     def __init__(self):
@@ -136,112 +136,218 @@ class DigitalTwinEngine:
 
 
 @st.cache_resource
-def load_engine_v2():
+def load_engine_v3():
     return DigitalTwinEngine()
 
+engine = load_engine_v3()
 
-engine = load_engine_v2()
 
-
+# =========================================================
+# 3D LOW-POLY PLEXUS HUMAN MESH GENERATOR (LIKE IMAGE)
+# =========================================================
 def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
-    """Generates an interactive 3D Holographic Human Body & Organ Risk Analyzer."""
-    np.random.seed(42)
-    body_x, body_y, body_z = [], [], []
+    """Generates an anatomical 3D Low-Poly Cyan Wireframe Plexus Human Model."""
+    edge_x, edge_y, edge_z = [], [], []
+    node_x, node_y, node_z = [], [] , []
 
-    def add_cylinder(x_c, y_c, z_min, z_max, rx, ry, n_pts=220):
-        theta = np.random.uniform(0, 2 * np.pi, n_pts)
-        z = np.random.uniform(z_min, z_max, n_pts)
-        x = x_c + rx * np.cos(theta)
-        y = y_c + ry * np.sin(theta)
-        body_x.extend(x)
-        body_y.extend(y)
-        body_z.extend(z)
+    def add_anatomical_limb(slices, n_angles=12):
+        """
+        Builds a triangulated 3D plexus mesh tube along a list of anatomical cross-sections:
+        Each slice is (cx, cy, z, rx, ry).
+        """
+        angles = np.linspace(0, 2 * np.pi, n_angles, endpoint=False)
+        rings = []
+        for idx, (cx, cy, z, rx, ry) in enumerate(slices):
+            # Twist half-step on odd rings for triangulated low-poly plexus look
+            twist = (np.pi / n_angles) if (idx % 2 == 1) else 0.0
+            pts = []
+            for a in angles + twist:
+                px = cx + rx * np.cos(a)
+                py = cy + ry * np.sin(a)
+                pts.append((px, py, z))
+                node_x.append(px)
+                node_y.append(py)
+                node_z.append(z)
+            rings.append(pts)
 
-    # 1. Head & Neck
-    u = np.random.uniform(0, 2 * np.pi, 250)
-    v = np.random.uniform(0, np.pi, 250)
-    body_x.extend(0.13 * np.cos(u) * np.sin(v))
-    body_y.extend(0.15 * np.sin(u) * np.sin(v))
-    body_z.extend(1.68 + 0.14 * np.cos(v))
-    add_cylinder(0, 0, 1.48, 1.55, 0.06, 0.06, 60)
+        # Connect rings with horizontal, vertical, and diagonal plexus edges
+        for i in range(len(rings) - 1):
+            r1, r2 = rings[i], rings[i + 1]
+            for j in range(n_angles):
+                jn = (j + 1) % n_angles
+                # Horizontal ring edge
+                edge_x.extend([r1[j][0], r1[jn][0], None])
+                edge_y.extend([r1[j][1], r1[jn][1], None])
+                edge_z.extend([r1[j][2], r1[jn][2], None])
+                # Vertical / diagonal strut 1
+                edge_x.extend([r1[j][0], r2[j][0], None])
+                edge_y.extend([r1[j][1], r2[j][1], None])
+                edge_z.extend([r1[j][2], r2[j][2], None])
+                # Diagonal triangulation strut 2
+                edge_x.extend([r1[jn][0], r2[j][0], None])
+                edge_y.extend([r1[jn][1], r2[j][1], None])
+                edge_z.extend([r1[jn][2], r2[j][2], None])
 
-    # 2. Torso
-    add_cylinder(0, 0, 0.92, 1.48, 0.23, 0.14, 650)
+        # Close top ring
+        top = rings[-1]
+        for j in range(n_angles):
+            jn = (j + 1) % n_angles
+            edge_x.extend([top[j][0], top[jn][0], None])
+            edge_y.extend([top[j][1], top[jn][1], None])
+            edge_z.extend([top[j][2], top[jn][2], None])
 
-    # 3. Left & Right Arms
-    add_cylinder(-0.31, 0, 0.78, 1.44, 0.055, 0.055, 180)
-    add_cylinder(0.31, 0, 0.78, 1.44, 0.055, 0.055, 180)
+    # 1. Head, Cranium, Jaw & Neck ( sculpted proportions )
+    head_neck_slices = [
+        (0.0, 0.0, 1.46, 0.065, 0.060),  # Base of neck
+        (0.0, 0.0, 1.52, 0.058, 0.055),  # Mid neck
+        (0.0, 0.01, 1.57, 0.075, 0.085), # Jawline / Chin
+        (0.0, 0.01, 1.63, 0.095, 0.110), # Cheekbones
+        (0.0, 0.0, 1.70, 0.105, 0.120),  # Cranium / Brow
+        (0.0, -0.01, 1.77, 0.090, 0.105),# Upper skull
+        (0.0, -0.01, 1.82, 0.045, 0.055) # Crown
+    ]
+    add_anatomical_limb(head_neck_slices, n_angles=12)
 
-    # 4. Left & Right Legs
-    add_cylinder(-0.11, 0, 0.05, 0.92, 0.08, 0.08, 280)
-    add_cylinder(0.11, 0, 0.05, 0.92, 0.08, 0.08, 280)
+    # 2. Torso (Shoulders -> Chest -> Waist -> Pelvis)
+    torso_slices = [
+        (0.0, 0.0, 0.88, 0.155, 0.100),  # Pelvis / Hips
+        (0.0, 0.0, 0.96, 0.165, 0.105),  # Iliac crest
+        (0.0, 0.0, 1.05, 0.145, 0.095),  # Narrow waist
+        (0.0, 0.01, 1.15, 0.165, 0.110), # Lower ribcage
+        (0.0, 0.015, 1.26, 0.195, 0.125),# Pectorals / Chest
+        (0.0, 0.01, 1.36, 0.235, 0.120), # Broad shoulders / Deltoid bridge
+        (0.0, 0.0, 1.44, 0.130, 0.080)   # Trapezius / Collarbone
+    ]
+    add_anatomical_limb(torso_slices, n_angles=16)
+
+    # 3. Left & Right Arms in Anatomical A-Pose (angled outward like uploaded image)
+    for side in [-1, 1]:
+        arm_slices = [
+            (side * 0.22, 0.0, 1.37, 0.062, 0.060),  # Deltoid / Shoulder
+            (side * 0.27, 0.0, 1.25, 0.052, 0.050),  # Bicep / Tricep
+            (side * 0.32, 0.01, 1.13, 0.045, 0.044), # Elbow joint
+            (side * 0.37, 0.02, 1.01, 0.042, 0.038), # Forearm
+            (side * 0.42, 0.03, 0.90, 0.032, 0.025), # Wrist
+            (side * 0.46, 0.04, 0.82, 0.042, 0.018), # Palm / Hand
+            (side * 0.49, 0.045, 0.76, 0.028, 0.012) # Fingers
+        ]
+        add_anatomical_limb(arm_slices, n_angles=9)
+
+    # 4. Left & Right Legs (Thigh -> Knee -> Calf -> Ankle -> Foot)
+    for side in [-1, 1]:
+        leg_slices = [
+            (side * 0.095, 0.0, 0.88, 0.082, 0.082),  # Upper Thigh / Hip
+            (side * 0.100, 0.0, 0.72, 0.074, 0.074),  # Mid Quadriceps
+            (side * 0.102, 0.0, 0.56, 0.058, 0.058),  # Above Knee
+            (side * 0.105, -0.005, 0.47, 0.052, 0.054),# Knee joint
+            (side * 0.108, -0.01, 0.34, 0.058, 0.060),# Calf muscle
+            (side * 0.110, 0.0, 0.19, 0.042, 0.044),  # Lower Shin
+            (side * 0.112, 0.0, 0.08, 0.036, 0.038),  # Ankle
+            (side * 0.120, 0.05, 0.02, 0.045, 0.075)  # Foot
+        ]
+        add_anatomical_limb(leg_slices, n_angles=10)
 
     fig = go.Figure()
 
+    # Outer Holographic Bounding Frame (like the second reference image)
+    box_x = [-0.55, 0.55, 0.55, -0.55, -0.55, None, -0.55, 0.55, 0.55, -0.55, -0.55, None,
+             -0.55, -0.55, None, 0.55, 0.55, None, 0.55, 0.55, None, -0.55, -0.55]
+    box_y = [-0.30, -0.30, 0.30, 0.30, -0.30, None, -0.30, -0.30, 0.30, 0.30, -0.30, None,
+             -0.30, -0.30, None, -0.30, -0.30, None, 0.30, 0.30, None, 0.30, 0.30]
+    box_z = [0.0, 0.0, 0.0, 0.0, 0.0, None, 1.88, 1.88, 1.88, 1.88, 1.88, None,
+             0.0, 1.88, None, 0.0, 1.88, None, 0.0, 1.88, None, 0.0, 1.88]
     fig.add_trace(go.Scatter3d(
-        x=body_x, y=body_y, z=body_z,
-        mode='markers',
-        name='3D Human Bio-Mesh',
-        marker=dict(size=2.2, color='#00D4FF', opacity=0.22),
+        x=box_x, y=box_y, z=box_z,
+        mode='lines',
+        name='Holographic Scan Frame',
+        line=dict(color='rgba(0, 212, 255, 0.22)', width=1.5),
+        hoverinfo='skip',
+        showlegend=False
+    ))
+
+    # Trace 1: Glowing Cyan Wireframe Plexus Lines
+    fig.add_trace(go.Scatter3d(
+        x=edge_x, y=edge_y, z=edge_z,
+        mode='lines',
+        name='3D Plexus Wireframe',
+        line=dict(color='rgba(0, 225, 255, 0.42)', width=1.6),
         hoverinfo='skip'
+    ))
+
+    # Trace 2: Glowing Cyan Constellation Vertex Dots
+    fig.add_trace(go.Scatter3d(
+        x=node_x, y=node_y, z=node_z,
+        mode='markers',
+        name='Bio-Mesh Nodes',
+        marker=dict(size=2.3, color='#70F3FF', opacity=0.75),
+        hoverinfo='skip',
+        showlegend=False
     ))
 
     def score_to_color(score):
         if score >= 75:
-            return '#00CC96', 'OPTIMAL'
+            return '#00FF9D', 'OPTIMAL'
         elif score >= 50:
-            return '#FFA15A', 'MODERATE STRAIN'
-        return '#EF553B', 'HIGH RISK ALERT'
+            return '#FFB020', 'MODERATE STRAIN'
+        return '#FF3B5C', 'HIGH RISK ALERT'
 
+    # Glowing Internal Organ Cores inside the Wireframe Body
     organs_3d = [
         {
             'name': '🧠 Brain & Autonomic Core',
-            'coords': (0.0, 0.0, 1.70),
+            'coords': (0.0, 0.01, 1.71),
             'score': organ_scores['Autonomic (HRV) Tone'],
             'metric': f"HRV: {patient_state['hrv']} ms | Sleep: {patient_state['sleep_hrs']} hrs",
             'size': 18
         },
         {
             'name': '🫀 Heart (Cardiac Core)',
-            'coords': (-0.05, 0.03, 1.30),
+            'coords': (-0.045, 0.03, 1.26),
             'score': organ_scores['Cardiac Efficiency'],
             'metric': f"Resting HR: {patient_state['resting_hr']} bpm | Sys BP: {patient_state['sys_bp']} mmHg",
             'size': 22
         },
         {
             'name': '🫁 Left & Right Lungs',
-            'coords': (0.08, 0.02, 1.32),
+            'coords': (0.075, 0.02, 1.28),
             'score': organ_scores['Sleep & Oxygenation'],
             'metric': f"SpO2: {patient_state['spo2']}% | Sleep: {patient_state['sleep_hrs']} hrs",
-            'size': 19
+            'size': 18
         },
         {
             'name': '🧬 Liver & Pancreas (Metabolic)',
-            'coords': (-0.07, 0.02, 1.08),
+            'coords': (-0.06, 0.02, 1.07),
             'score': organ_scores['Glycemic & Metabolic'],
             'metric': f"HbA1c: {patient_state['hba1c']}% | BMI: {patient_state['bmi']} kg/m²",
-            'size': 20
+            'size': 19
         },
         {
             'name': '🩸 Aortic & Vascular Tree',
-            'coords': (0.02, 0.0, 1.18),
+            'coords': (0.01, 0.01, 1.17),
             'score': organ_scores['Vascular Health'],
             'metric': f"LDL: {patient_state['ldl']} mg/dL | Sys BP: {patient_state['sys_bp']} mmHg",
-            'size': 17
+            'size': 16
         }
     ]
 
     for org in organs_3d:
         color, status = score_to_color(org['score'])
+        # Outer Halo Glow
         fig.add_trace(go.Scatter3d(
-            x=[org['coords'][0]],
-            y=[org['coords'][1]],
-            z=[org['coords'][2]],
+            x=[org['coords'][0]], y=[org['coords'][1]], z=[org['coords'][2]],
+            mode='markers',
+            marker=dict(size=org['size'] * 1.65, color=color, opacity=0.28),
+            hoverinfo='skip',
+            showlegend=False
+        ))
+        # Inner Core Node
+        fig.add_trace(go.Scatter3d(
+            x=[org['coords'][0]], y=[org['coords'][1]], z=[org['coords'][2]],
             mode='markers+text',
             name=f"{org['name']} ({org['score']}/100)",
             text=[org['name'].split()[0]],
             textposition="top center",
-            marker=dict(size=org['size'], color=color, opacity=0.95, line=dict(color='white', width=2)),
+            marker=dict(size=org['size'] * 0.75, color=color, opacity=1.0, line=dict(color='white', width=2)),
             hovertemplate=(
                 f"<b>{org['name']}</b><br>"
                 f"Resilience Score: <b>{org['score']}/100 ({status})</b><br>"
@@ -249,14 +355,14 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
             )
         ))
 
-    # Smartwatch Sensor Node on Left Wrist
+    # Smartwatch Sensor Node on Wrist (-0.42, 0.03, 0.90)
     fig.add_trace(go.Scatter3d(
-        x=[-0.31], y=[0.04], z=[0.83],
+        x=[-0.42], y=[0.03], z=[0.90],
         mode='markers+text',
         name='⌚ Connected Smartwatch Sensor',
         text=['⌚ Watch'],
         textposition="bottom center",
-        marker=dict(size=14, color='#AB63FA', symbol='diamond', line=dict(color='white', width=2)),
+        marker=dict(size=13, color='#D668FF', symbol='diamond', line=dict(color='white', width=2)),
         hovertemplate=(
             f"<b>⌚ {watch_source}</b><br>"
             f"Steps: {patient_state['daily_steps']:,}/day<br>"
@@ -264,41 +370,46 @@ def build_3d_human_analyzer(organ_scores, patient_state, watch_source):
         )
     ))
 
-    # Biometric Telemetry Conduit
+    # Glowing Telemetry Pathway from Wrist Watch -> Shoulder -> Heart -> Brain
     fig.add_trace(go.Scatter3d(
-        x=[0.0, -0.05, 0.02, -0.07, -0.31],
-        y=[0.0, 0.03, 0.0, 0.02, 0.04],
-        z=[1.70, 1.30, 1.18, 1.08, 0.83],
+        x=[-0.42, -0.32, -0.22, -0.045, 0.01, -0.06, 0.0],
+        y=[0.03, 0.01, 0.0, 0.03, 0.01, 0.02, 0.01],
+        z=[0.90, 1.13, 1.37, 1.26, 1.17, 1.07, 1.71],
         mode='lines',
-        name='Biometric Telemetry Conduit',
-        line=dict(color='#00FFCC', width=3, dash='dot'),
+        name='Biometric Neural Conduit',
+        line=dict(color='#00FFCC', width=3.5, dash='dot'),
         hoverinfo='skip'
     ))
 
     fig.update_layout(
-        title="Interactive 3D Human Digital Twin Analyzer (Drag to Rotate | Scroll to Zoom)",
+        title="ANATOMY | Interactive 3D Low-Poly Plexus Digital Twin (Drag to Rotate | Scroll to Zoom)",
         scene=dict(
-            xaxis=dict(visible=False, range=[-0.6, 0.6]),
-            yaxis=dict(visible=False, range=[-0.6, 0.6]),
-            zaxis=dict(visible=False, range=[0.0, 1.95]),
+            xaxis=dict(visible=False, range=[-0.65, 0.65]),
+            yaxis=dict(visible=False, range=[-0.55, 0.55]),
+            zaxis=dict(visible=False, range=[-0.02, 1.92]),
             aspectmode='manual',
-            aspectratio=dict(x=1, y=0.8, z=2.1),
-            camera=dict(eye=dict(x=1.45, y=1.45, z=0.8)),
-            bgcolor='rgba(14, 17, 23, 0.95)'
+            aspectratio=dict(x=1.15, y=0.85, z=2.0),
+            camera=dict(eye=dict(x=0.0, y=1.85, z=0.25)), # Front-facing anatomical view like reference image
+            bgcolor='#04142C' # Deep navy holographic background matching uploaded image
         ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        height=520,
-        margin=dict(l=0, r=0, t=40, b=0),
-        legend=dict(yanchor="top", y=0.95, xanchor="left", x=0.01)
+        paper_bgcolor='#04142C',
+        font=dict(color='#70F3FF'),
+        height=600,
+        margin=dict(l=0, r=0, t=45, b=0),
+        legend=dict(
+            yanchor="top", y=0.95, xanchor="left", x=0.01,
+            bgcolor="rgba(4, 20, 44, 0.75)",
+            bordercolor="rgba(0, 212, 255, 0.3)",
+            borderwidth=1
+        )
     )
     return fig
 
 
 # Header
-st.title("🧬 ChronoTwin: 3D Human Digital Twin & Smartwatch Analyzer")
+st.title("🧬 ChronoTwin: 3D Plexus Human Digital Twin & Smartwatch Analyzer")
 st.markdown(
-    "**Happiest Health Digital Twin Challenge** | *Interactive 3D Anatomy + Smartwatch Telemetry + EHR Predictive Engine*"
+    "**Happiest Health Digital Twin Challenge** | *3D Holographic Anatomy + Smartwatch Telemetry + EHR Predictive Engine*"
 )
 
 default_watch = {
@@ -313,9 +424,7 @@ for k, v in default_watch.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ==========================================
-# SMARTWATCH CONNECTIVITY HUB (TOP EXPANDER)
-# ==========================================
+# Smartwatch Hub
 with st.expander("⌚ Connect Smartwatch / Wearable Device (BLE Stream, Health Connect CSV, or Cloud API)", expanded=False):
     sync_col1, sync_col2 = st.columns([1.3, 1.7])
 
@@ -359,109 +468,3 @@ with st.expander("⌚ Connect Smartwatch / Wearable Device (BLE Stream, Health C
             if uploaded is not None:
                 try:
                     if uploaded.name.endswith(".csv"):
-                        df_up = pd.read_csv(uploaded)
-                        row = df_up.iloc[-1].to_dict()
-                    else:
-                        row = json.load(uploaded)
-                    st.session_state['resting_hr'] = int(row.get('resting_hr', row.get('heart_rate', 75)))
-                    st.session_state['hrv'] = int(row.get('hrv', 42))
-                    st.session_state['daily_steps'] = int(row.get('daily_steps', row.get('steps', 6000)))
-                    st.session_state['sleep_hrs'] = float(row.get('sleep_hrs', row.get('sleep', 6.8)))
-                    st.session_state['spo2'] = float(row.get('spo2', 97.0))
-                    st.session_state['watch_source'] = f"Uploaded File ({uploaded.name})"
-                    st.success("Smartwatch telemetry parsed and ingested into Digital Twin!")
-                except Exception as e:
-                    st.error(f"Could not parse file: {e}")
-
-        else:
-            api_payload = st.text_area(
-                "Incoming Wearable Webhook JSON Payload:",
-                value=json.dumps({
-                    "device": "Pixel Watch 3 (Health Connect API)",
-                    "resting_hr": 76, "hrv": 41, "daily_steps": 7250, "sleep_hrs": 6.9, "spo2": 97.4
-                }, indent=2),
-                height=120
-            )
-            if st.button("⚡ Ingest Cloud API Payload"):
-                try:
-                    data = json.loads(api_payload)
-                    st.session_state['resting_hr'] = int(data.get('resting_hr', 76))
-                    st.session_state['hrv'] = int(data.get('hrv', 41))
-                    st.session_state['daily_steps'] = int(data.get('daily_steps', 7250))
-                    st.session_state['sleep_hrs'] = float(data.get('sleep_hrs', 6.9))
-                    st.session_state['spo2'] = float(data.get('spo2', 97.4))
-                    st.session_state['watch_source'] = data.get('device', 'Cloud Wearable API')
-                    st.success("Cloud API telemetry synchronized!")
-                except Exception as e:
-                    st.error(f"Invalid JSON payload: {e}")
-
-# ==========================================
-# SIDEBAR: EHR + SMARTWATCH TELEMETRY INPUTS
-# ==========================================
-st.sidebar.header("📋 1. Clinical EHR Baseline")
-age = st.sidebar.slider("Age (Years)", 22, 80, 52)
-bmi = st.sidebar.slider("BMI (kg/m²)", 18.0, 42.0, 29.2, step=0.2)
-hba1c = st.sidebar.slider("HbA1c (%)", 4.5, 11.0, 6.7, step=0.1)
-sys_bp = st.sidebar.slider("Systolic BP (mmHg)", 90, 190, 138)
-ldl = st.sidebar.slider("LDL Cholesterol (mg/dL)", 60, 220, 144)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("⌚ 2. Smartwatch Stream")
-st.sidebar.caption(f"Source: **{st.session_state['watch_source']}**")
-
-resting_hr = st.sidebar.slider("Resting Heart Rate (bpm)", 45, 110, int(st.session_state['resting_hr']))
-hrv = st.sidebar.slider("Heart Rate Variability - HRV (ms)", 15, 100, int(st.session_state['hrv']))
-daily_steps = st.sidebar.slider("Daily Step Count", 1000, 18000, int(st.session_state['daily_steps']), step=250)
-sleep_hrs = st.sidebar.slider("Sleep Duration (hrs/night)", 4.0, 9.5, float(st.session_state['sleep_hrs']), step=0.25)
-spo2 = st.sidebar.slider("Blood Oxygen - SpO2 (%)", 90.0, 100.0, float(st.session_state['spo2']), step=0.2)
-
-baseline_state = {
-    'age': age, 'bmi': bmi, 'hba1c': hba1c, 'sys_bp': sys_bp, 'ldl': ldl,
-    'resting_hr': resting_hr, 'hrv': hrv, 'daily_steps': daily_steps,
-    'sleep_hrs': sleep_hrs, 'spo2': spo2
-}
-
-# ==========================================
-# DIGITAL TWIN SIMULATION & 3D HUMAN ANALYZER
-# ==========================================
-col_sim, col_viz = st.columns([1.0, 2.0])
-
-with col_sim:
-    st.subheader("🧪 3. Predictive Care Simulator")
-    st.caption("Adjust interventions to see the 3D Human Twin respond:")
-    view_state_mode = st.radio(
-        "3D Human Body Inspection Mode:",
-        ["Current Baseline Patient", "6-Month Post-Intervention Twin"],
-        horizontal=True
-    )
-    sim_steps = st.slider("Prescribed Daily Steps (Watch Target)", 1000, 18000, max(daily_steps, 9500), step=500)
-    sim_sleep = st.slider("Prescribed Sleep Target (hrs/night)", 4.0, 9.5, max(sleep_hrs, 7.5), step=0.25)
-    sim_bmi = st.slider("Target BMI (Nutrition Plan)", 18.0, 42.0, round(max(18.5, bmi * 0.90), 1), step=0.2)
-    sim_bp = st.slider("Target Systolic BP (Therapy/Diet)", 90, 190, min(sys_bp, 120))
-
-target_state = baseline_state.copy()
-target_state.update({
-    'daily_steps': sim_steps,
-    'sleep_hrs': sim_sleep,
-    'bmi': sim_bmi,
-    'sys_bp': sim_bp
-})
-
-base_risk = engine.predict_risk(baseline_state)
-trajectory_df = engine.simulate_trajectory(baseline_state, target_state, months=6)
-final_twin_risk = trajectory_df['Digital Twin Guided Care'].iloc[-1]
-risk_delta = final_twin_risk - base_risk
-
-final_state_approx = target_state.copy()
-final_state_approx['resting_hr'] = trajectory_df['Predicted Resting HR (bpm)'].iloc[-1]
-final_state_approx['hba1c'] = trajectory_df['Predicted HbA1c (%)'].iloc[-1]
-final_state_approx['hrv'] = round(min(100, hrv + ((sim_steps - daily_steps) / 1000.0) * 1.8), 1)
-
-base_organs = engine.compute_organ_scores(baseline_state)
-target_organs = engine.compute_organ_scores(final_state_approx)
-
-with col_viz:
-    st.subheader("📊 4. 3D Human Analyzer & AI Outcome Forecast")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Current Adverse Risk", f"{base_risk:.1f}%")
-    k2.metric("6-Month Twin Risk", f"{final_twin_risk:.1f}%", f"{risk_delta:.1f}%", delta_color="inverse")

@@ -467,4 +467,5 @@ with st.expander("⌚ Connect Smartwatch / Wearable Device (BLE Stream, Health C
             uploaded = st.file_uploader("Upload Wearable Data File", type=["csv", "json"])
             if uploaded is not None:
                 try:
-                    if uploaded.name.endswith(".csv"):
+                      if uploaded.name.endswith(".csv"):
+                                                        
